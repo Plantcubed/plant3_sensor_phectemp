@@ -367,12 +367,9 @@ float Plant3SensorPhECTemp::getEc(float temperature_value) {
   float voltage = analog_average*(float)5.0/1024;
 
   float temperature_coefficient = 1.0 + 0.0185*(temperature_value - 25.0);
-  //float voltage_coefficient = analog_voltage / temperature_coefficient; 
-  //float voltage = voltage_coefficient / 1000;
-
   if (measuerment_mode_ != DEFAULT_NORMAL) return  voltage;
 
-  float ec = (CalConfig.EC_Slope* voltage) + CalConfig.EC_Offset;
+  float ec = (CalConfig.EC_Slope* voltage * temperature_coefficient) + CalConfig.EC_Offset;
   if (ec < 0) ec = 0;
   return ec;
 }
