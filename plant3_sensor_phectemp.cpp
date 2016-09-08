@@ -115,8 +115,8 @@ String Plant3SensorPhECTemp::set(String instruction_code, int instruction_id, St
 
 	String smode = getValue(instruction_parameter, ' ', 0);
 	int mode = smode.toInt();
-
 	if ((instruction_code == ph_instruction_code_) && (instruction_id == ph_instruction_id_)) {
+		//Serial.println("Mode = " + mode);
 		switch (mode) {
 			case SET_SAMPLES:
 				temp = getValue(instruction_parameter, ' ', 1);
@@ -125,7 +125,7 @@ String Plant3SensorPhECTemp::set(String instruction_code, int instruction_id, St
 				PutEE();
 				break;
 
-			case CALIBRATE:
+			case CALIBRATE_7_0:
 				//Serial.println("Cal PH");
 				CalPh();
 				break;
@@ -160,9 +160,14 @@ String Plant3SensorPhECTemp::set(String instruction_code, int instruction_id, St
 				PutEE();
 				break;
 
-			case CALIBRATE:
+			case CALIBRATE_1_413:
 				//Serial.println("Cal EC");
-				CalEc();
+				CalEc(CALIBRATE_1_413);
+				break;
+
+			case CALIBRATE_12_880:
+				//Serial.println("Cal EC");
+				CalEc(CALIBRATE_12_880);
 				break;
 
 			case RESET:
@@ -178,32 +183,20 @@ String Plant3SensorPhECTemp::set(String instruction_code, int instruction_id, St
 				break;
 
 			case LIST:
-				Serial.println("EC Config/Cal");
-				Serial.println(CalConfig.EC_Offset);
-				Serial.println(CalConfig.EC_Slope);
+				float ec_slope = (1.413 - 12.883) / (CalConfig.X_1_413 - CalConfig.X_12_883);
+				float ec_offset = 1.413 - (CalConfig.X_1_413 * ec_slope);
+				Serial.println("CalConfig.X_1_413");
+				Serial.println(CalConfig.X_1_413);
+				Serial.println("CalConfig.X_12_883");
+				Serial.println(CalConfig.X_12_883);
+				Serial.println("EC offset");
+				Serial.println(ec_offset);
+				Serial.println("EC slope ");
+				Serial.println(ec_slope);
 				Serial.println(CalConfig.Measurement_Samples);
 				Serial.println(CalConfig.checksum);
 				break;
 
-			//case TEST:
-			//	CalConfig.EC_Offset = 9;
-			//	PutEE();
-			//	break;
-
-			//case TEST2:
-			//	EEPROM.get(EE_Address_, CalConfig);
-			//	Serial.println(CalConfig.EC_Offset);
-			//	Serial.println(CalConfig.EC_Slope);
-			//	Serial.println(CalConfig.PH_Offset);
-			//	Serial.println(CalConfig.PH_Slope);
-			//	Serial.println(CalConfig.Measurement_Samples);
-			//	Serial.println(CalConfig.checksum);
-			//	break;
-
-			//case TEST3:
-			//	int ch = checksumEE();
-			//	Serial.println(ch);
-			//	break;
 		}
 	}
   return "";
@@ -242,8 +235,8 @@ void Plant3SensorPhECTemp::setPhDefaults(void)
 void Plant3SensorPhECTemp::setECDefaults(void)
 {
 	//Serial.println("Reset EC to defaults");
-	CalConfig.EC_Offset = -6.1814;
-	CalConfig.EC_Slope = 5.0294;
+	CalConfig.X_1_413 = 1.58;
+	CalConfig.X_12_883 = 3.45;
 	CalConfig.Measurement_Samples = DEFAULT_SAMPLES;
 }
 
@@ -256,16 +249,17 @@ void Plant3SensorPhECTemp::getSensorData(void) {
   if (last_update_was_ec_ && (millis() - prev_update_time_ > ec_off_delay_)) {
     // Update pH
     ph_raw = getPh();
-    ph_filtered = (float)round(ph_filter_->process(ph_raw)*10)/10; // set accuracy to +-0.05
-    digitalWrite(ec_control_pin_, HIGH); // enable EC for next reading period
+	ph_filtered = (float)round(ph_filter_->process(ph_raw)*10)/10; // set accuracy to +-0.05
+    //digitalWrite(ec_control_pin_, HIGH); // enable EC for next reading period
     prev_update_time_ = millis();
     last_update_was_ec_ = false;
   }
   else if (!last_update_was_ec_ && (millis() - prev_update_time_ > ec_on_delay_)) {
     // Update EC
     ec_raw = getEc(temperature_filtered);
+	//ec_filtered = ec_raw;
     ec_filtered = (float)round(ec_filter_->process(ec_raw)*10)/10; // set accuracy to +-0.05
-    //digitalWrite(ec_control_pin_, LOW);  // disable EC for pH reading.
+    //dgitalWrite(ec_control_pin_, LOW);  // disable EC for pH reading.
     prev_update_time_ = millis();
     last_update_was_ec_ = true;
   }
@@ -273,16 +267,26 @@ void Plant3SensorPhECTemp::getSensorData(void) {
 
 float Plant3SensorPhECTemp::getPh(void) {
   // Sampling Specifications
-  int * voltage;
-  voltage = new int[CalConfig.Measurement_Samples];
+  int analog_sum = 0;
 
   // Acquire Samples
-  for (int i=0; i<CalConfig.Measurement_Samples; i++) {
-    voltage[i] = analogRead(ph_pin_);
+  for (int i = 0; i<CalConfig.Measurement_Samples; i++) {
+	  analog_sum += analogRead(ph_pin_);
   }
 
+  float analog_average = (float)analog_sum / CalConfig.Measurement_Samples;
+  float volts = analog_average*(float)5.0 / 1024;
+
+  //int * voltage;
+  //voltage = new int[CalConfig.Measurement_Samples];
+
+  // Acquire Samples
+  //f//or (int i=0; i<CalConfig.Measurement_Samples; i++) {
+    //voltage[i] = analogRead(ph_pin_);
+  //}
+
   // Remove Min & Max Samples, Average, Convert to Voltage
-  float volts = avergeArray(voltage, CalConfig.Measurement_Samples)*5.0/1024;
+  //float volts = avergeArray(voltage, CalConfig.Measurement_Samples)*5.0/1024;
 
   if (measuerment_mode_ != DEFAULT_NORMAL) return volts;
 
@@ -363,24 +367,27 @@ float Plant3SensorPhECTemp::getEc(float temperature_value) {
   for (int i=0; i<CalConfig.Measurement_Samples; i++) {
     analog_sum += analogRead(ec_pin_);
   }
+
   float analog_average = (float) analog_sum / CalConfig.Measurement_Samples;
   float voltage = analog_average*(float)5.0/1024;
 
   float temperature_coefficient = 1.0 + 0.0185*(temperature_value - 25.0);
   if (measuerment_mode_ != DEFAULT_NORMAL) return  voltage;
 
-  float ec = (CalConfig.EC_Slope* voltage * temperature_coefficient) + CalConfig.EC_Offset;
+  // calculate slope
+  float ec_slope = (1.413 - 12.883) / (CalConfig.X_1_413 - CalConfig.X_12_883);
+  float ec_offset = 1.413 - (CalConfig.X_1_413 * ec_slope);
+  float ec = (ec_slope* voltage * temperature_coefficient) + ec_offset;
   if (ec < 0) ec = 0;
   return ec;
 }
 
-int Plant3SensorPhECTemp::CalEc(void)
+int Plant3SensorPhECTemp::CalEc(int calval)
 {
-	// ec calibration is done at ec of 1.413uS
+	// ec calibration is done at ec of both 1.413uS and  12.883uS
 	// get reading
 	// Sampling Specifications
 	int voltage[25];
-	const float calibration_ec = 1.413;
 
 	// Acquire Samples
 	for (int i = 0; i<25; i++) {
@@ -390,15 +397,13 @@ int Plant3SensorPhECTemp::CalEc(void)
 	// Remove Min & Max Samples, Average, Convert to Voltage
 	double volts = avergeArray(voltage, 25)*5.0 / 1024;
 
-	// calculate new slope
-	float new_offset = calibration_ec - (volts * CalConfig.EC_Slope);
-	//Serial.println("New Offset");
-	//Serial.println(new_offset);
-	//Serial.println("Old Offset");
-	//Serial.println(CalConfig.EC_Offset);
-
 	// write new value of offset
-	CalConfig.EC_Offset = new_offset;
+	if (calval == CALIBRATE_12_880) {
+		CalConfig.X_12_883 = volts;
+	}
+	else {
+		CalConfig.X_1_413 = volts;
+	}
 	PutEE();
 }
 

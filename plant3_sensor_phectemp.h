@@ -81,13 +81,12 @@ class Plant3SensorPhECTemp : SensorActuatorModule {
   private:
 	  typedef enum {
 		  SET_SAMPLES = 1,
-		  CALIBRATE = 2,
+		  CALIBRATE_7_0 = 2,
 		  RESET = 3,
 		  RAW = 4,
 		  LIST= 5,
-		  TEST = 6,
-		  TEST2 = 7,
-		  TEST3 = 8,
+		  CALIBRATE_1_413 = 6,
+		  CALIBRATE_12_880 = 7,
 	  };
 
 	  /**
@@ -98,8 +97,8 @@ class Plant3SensorPhECTemp : SensorActuatorModule {
 	  * @param PH_Offset
 	  */
 	  struct TCalConfig {
-		  float EC_Slope;
-		  float EC_Offset;
+		  float X_1_413;
+		  float X_12_883;
 		  float PH_Slope;
 		  float PH_Offset;
 		  unsigned int Measurement_Samples;
@@ -116,7 +115,7 @@ class Plant3SensorPhECTemp : SensorActuatorModule {
 	int CalPh(void);
     float getTemperature(void);
     float getEc(float temperature);
-	int CalEc(void);
+	int CalEc(int calval);
     float avergeArray(int* arr, int number);
 	String getValue(String data, char separator, int index);
 
